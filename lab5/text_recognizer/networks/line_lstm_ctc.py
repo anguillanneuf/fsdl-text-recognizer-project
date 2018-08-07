@@ -35,23 +35,37 @@ def line_lstm_ctc(input_shape, output_shape, window_width=28, window_stride=14):
     # Note that lstms expect a input of shape (num_batch_size, num_timesteps, feature_length).
 
     ##### Your code below (Lab 3)
-    image_reshaped = Reshape((image_height, image_width, 1))(image_input)
+   image_reshaped = Reshape((image_height, image_width, 1))(image_input)
     # (image_height, image_width, 1)
 
-    image_patches = Lambda(
-        slide_window,
-        arguments={'window_width': window_width, 'window_stride': window_stride}
-    )(image_reshaped)
-    # (num_windows, image_height, window_width, 1)
+    convnet_outputs = image_reshaped
+    convnet_outputs = BatchNormalization()(convnet_outputs)
+    # convnet_outputs = Dropout(0.2)(convnet_outputs)
+    convnet_outputs = Conv2D(32, kernel_size=(3, 3), activation='relu')(convnet_outputs)
+    # convnet_outputs = Dropout(0.2)(convnet_outputs)
+    convnet_outputs = BatchNormalization()(convnet_outputs)
+    convnet_outputs = Conv2D(64, (3, 3), activation='relu')(convnet_outputs)
+    # convnet_outputs = Dropout(0.2)(convnet_outputs)
+    convnet_outputs = MaxPooling2D(pool_size=(2, 2))(convnet_outputs)
+    convnet_outputs = Dropout(0.5)(convnet_outputs)
+    # convnet_outputs = MaxPooling2D(pool_size=(12, 1))(convnet_outputs)
+    convnet_outputs = Lambda(
+        slide_window_flatten,
+        arguments={'window_width': 12, 'window_stride': 1}
+    )(convnet_outputs)
+    convnet_outputs = Dense(128, activation='relu')(convnet_outputs)
+    print(convnet_outputs)
+    num_windows = 463
 
-    # Make a LeNet and get rid of the last two layers (softmax and dropout)
-    convnet = lenet((image_height, window_width, 1), (num_classes,))
-    convnet = KerasModel(inputs=convnet.inputs, outputs=convnet.layers[-2].output)
-    convnet_outputs = TimeDistributed(convnet)(image_patches)
     # (num_windows, 128)
 
-    lstm_output = lstm_fn(128, return_sequences=True)(convnet_outputs)
-    # (num_windows, 128)
+    lstm_output = Dropout(0.5)(convnet_outputs)
+    for i in range(kwargs.get('lstm_layers', 1)):
+        # lstm_output = Bidirectional(lstm_fn(256, return_sequences=True))(lstm_output)
+        # lstm_output = Dropout(0.5)(lstm_output)
+        lstm_output = BatchNormalization()(lstm_output)
+        lstm_output = Conv1D(256, 3, activation='relu', padding='SAME')(lstm_output)
+        lstm_output = Dropout(0.5)(lstm_output)
 
     softmax_output = Dense(num_classes, activation='softmax', name='softmax_output')(lstm_output)
     # (num_windows, num_classes)
@@ -77,4 +91,3 @@ def line_lstm_ctc(input_shape, output_shape, window_width=28, window_stride=14):
         outputs=[ctc_loss_output, ctc_decoded_output]
     )
     return model
-
